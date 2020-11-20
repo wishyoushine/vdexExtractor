@@ -1,0 +1,344 @@
+diff --git a/dexlayout/Android.bp b/dexlayout/Android.bp
+index 33ba58f..f3b2a7e 100644
+--- a/dexlayout/Android.bp
++++ b/dexlayout/Android.bp
+@@ -74,6 +74,13 @@ cc_defaults {
+     ],
+ }
+
++cc_defaults {
++    name: "compact_dex_converter_defaults",
++    defaults: ["art_defaults"],
++    host_supported: true,
++    srcs: ["compact_dex_converter_main.cc"],
++}
++
+ art_cc_binary {
+     name: "dexlayout",
+     defaults: ["dexlayout-defaults"],
+@@ -95,6 +102,66 @@ art_cc_binary {
+     ],
+ }
+
++art_cc_binary {
++    name: "compact_dex_converter",
++    defaults: ["compact_dex_converter_defaults"],
++    shared_libs: [
++        "libart",
++        "libart-dexlayout",
++        "libbase",
++        "libdexfile",
++    ],
++}
++
++art_cc_binary {
++    name: "compact_dex_converterd",
++    defaults: [
++        "art_debug_defaults",
++        "compact_dex_converter_defaults",
++    ],
++    shared_libs: [
++        "libartd",
++        "libartd-dexlayout",
++        "libbase",
++        "libdexfiled",
++    ],
++}
++
++art_cc_binary {
++    name: "compact_dex_converters",
++    static_executable: true,
++    device_supported: false,
++    defaults: ["compact_dex_converter_defaults"],
++    ldflags: [
++        "-z muldefs",
++    ],
++    static_libs: [
++        "libart",
++        "libart-dexlayout",
++        "libbase",
++        "libdexfile",
++    ] + art_static_dependencies,
++}
++
++art_cc_binary {
++    name: "compact_dex_converterds",
++    static_executable: true,
++    device_supported: false,
++    defaults: [
++        "art_debug_defaults",
++        "compact_dex_converter_defaults",
++    ],
++    ldflags: [
++        "-z muldefs",
++    ],
++    static_libs: [
++        "libartd",
++        "libartd-dexlayout",
++        "libbase",
++        "libdexfiled",
++    ] + art_static_dependencies,
++}
++
+ art_cc_test {
+     name: "art_dexlayout_tests",
+     defaults: ["art_gtest_defaults"],
+diff --git a/dexlayout/compact_dex_converter_main.cc b/dexlayout/compact_dex_converter_main.cc
+new file mode 100644
+index 0000000..62fa667
+--- /dev/null
++++ b/dexlayout/compact_dex_converter_main.cc
+@@ -0,0 +1,253 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * Main driver of the dexlayout utility.
++ *
++ * This is a tool to read dex files into an internal representation,
++ * reorganize the representation, and emit dex files with a better
++ * file layout.
++ */
++
++#include "dexlayout.h"
++
++#include <fcntl.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <unistd.h>
++
++#include <android-base/file.h>
++#include <android-base/logging.h>
++
++#include "base/logging.h"  // For InitLogging.
++#include "base/os.h"
++#include "base/unix_file/fd_file.h"
++#include "dex/dex_file_loader.h"
++#include "mem_map.h"
++#include "runtime.h"
++
++namespace art {
++
++static const char* kProgramName = "compact_dex_converter";
++
++/*
++ * Shows usage.
++ */
++static void Usage(void) {
++  LOG(ERROR) << "Copyright (C) 2016 The Android Open Source Project\n";
++  LOG(ERROR) << kProgramName << ": [-v] [-o outfile] [-w directory] cdexfile...\n";
++  LOG(ERROR) << " -v : verify output file is canonical to input (IR level comparison)";
++  LOG(ERROR) << " -o : output file name (defaults to stdout)";
++  LOG(ERROR) << " -w : output dex directory (defaults to same as input file(s))";
++}
++
++static int ProcessFile(FILE* out_file,
++                       const char *output_dex_directory,
++                       bool verify_output_file,
++                       const char *file_name) {
++  // Read and load the input Dex file
++  std::string content;
++  if (!android::base::ReadFileToString(file_name, &content)) {
++    LOG(ERROR) << "ReadFileToString failed";
++    return 1;
++  }
++
++  // We cannot use the ArtDexFileLoader since it only supports openning CompactDex
++  // files from Vdex containers.
++  std::string error;
++  const bool kVerifyChecksum = false;
++  const bool kVerify = true;  // Input file should always verify
++  const DexFileLoader dex_file_loader;
++  std::vector<std::unique_ptr<const DexFile>> dex_files;
++  if (!dex_file_loader.OpenAll(reinterpret_cast<const uint8_t*>(content.data()),
++                               content.size(),
++                               file_name,
++                               kVerify,
++                               kVerifyChecksum,
++                               &error,
++                               &dex_files)) {
++    LOG(ERROR) << "Input Dex file open failed: " << error;
++    return 1;
++  }
++
++  // Only one DexFile is expected
++  if (dex_files.size() != 1) {
++    LOG(ERROR) << "Only individual CompactDex files are currently supported";
++    return 1;
++  }
++
++  // Verify input is a CompactDex file
++  if (!dex_files[0]->IsCompactDexFile()) {
++    LOG(ERROR) << file_name << " is not a CompactDex file";
++    return 1;
++  }
++
++  // Copy the data into mutable memory.
++  std::vector<unsigned char> data;
++  std::unique_ptr<const DexFile> new_dex_file;
++
++  Options options;
++  options.compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
++  options.verify_output_ = verify_output_file;
++  options.verbose_ = true;
++  DexLayout dex_layout(options,
++                       /*info*/ nullptr,
++                       /*out_file*/ out_file,
++                       /*header*/ nullptr);
++  std::unique_ptr<DexContainer> dex_container;
++  if (!dex_layout.ProcessDexFile(file_name,
++                                 dex_files[0].get(),
++                                 0,
++                                 &dex_container,
++                                 &error)) {
++    LOG(ERROR) << "Unable to process CompactDex file: " << error;
++    return 1;
++  }
++
++  DexContainer::Section* main_section = dex_container->GetMainSection();
++
++  // For a StandardDex we don't expect a separate data section
++  CHECK_EQ(dex_container->GetDataSection()->Size(), 0u);
++  data.insert(data.end(), main_section->Begin(), main_section->End());
++
++  // Open the dex file in the buffer.
++  std::string location = "memory mapped file for " + std::string(file_name);
++  new_dex_file = dex_file_loader.Open(data.data(),
++                                      data.size(),
++                                      /*location*/ location,
++                                      /*location_checksum*/ 0,
++                                      /*oat_dex_file*/ nullptr,
++                                      /*verify*/ verify_output_file,
++                                      /*verify_checksum*/ false,
++                                      &error);
++  if (new_dex_file == nullptr) {
++    LOG(ERROR) << "Unable to open dex file from memory: " << error;
++    return 1;
++  }
++
++  // Recompute checksum
++  reinterpret_cast<DexFile::Header*>(const_cast<uint8_t*>(new_dex_file->Begin()))->checksum_ =
++      new_dex_file->CalculateChecksum();
++
++  // Write StandardDex file
++  const std::string& dex_file_location(file_name);
++  size_t last_slash = dex_file_location.rfind('/');
++  std::string dex_file_directory = dex_file_location.substr(0, last_slash + 1);
++  std::string output_location(output_dex_directory == nullptr ? dex_file_directory : output_dex_directory);
++  if (output_location == dex_file_directory) {
++    output_location = dex_file_location + ".new";
++  } else if (last_slash != std::string::npos) {
++    output_location += dex_file_location.substr(last_slash);
++  } else {
++    output_location += "/" + dex_file_location + ".new";
++  }
++  std::unique_ptr<File> new_file(OS::CreateEmptyFile(output_location.c_str()));
++  if (new_file.get() == nullptr) {
++    LOG(ERROR) << "Failed to open output dex file " << output_location;
++    return 1;
++  }
++
++  if (!new_file->WriteFully(new_dex_file->Begin(), new_dex_file->Size())) {
++    LOG(ERROR) << "Failed to write dex file";
++    return 1;
++  }
++  if (new_file->FlushCloseOrErase() != 0) {
++    LOG(ERROR) << "Flush and close failed";
++    return 1;
++  }
++
++  LOG(INFO) << "StandardDex file successfully extracted to " << output_location;
++
++  return 0;
++}
++
++/*
++ * Main driver of the dexlayout utility.
++ */
++int DexlayoutDriver(int argc, char** argv) {
++  // Art specific set up.
++  InitLogging(argv, Runtime::Abort);
++  MemMap::Init();
++
++  char* output_file_name = nullptr;
++  char* output_dex_directory = nullptr;
++  bool verify_output_file = false;
++  bool want_usage = false;
++
++  // Parse all arguments.
++  while (1) {
++    const int ic = getopt(argc, argv, "o:w:v");
++    if (ic < 0) {
++      break;  // done
++    }
++    switch (ic) {
++      case 'o':  // output file
++        output_file_name = optarg;
++        break;
++      case 'w':  // output dex files directory
++        output_dex_directory = optarg;
++        break;
++      case 'v':  // verify output dex file
++        verify_output_file = true;
++        break;
++      default:
++        want_usage = true;
++        break;
++    }  // switch
++  }  // while
++
++  // Detect early problems.
++  if (optind == argc) {
++    LOG(ERROR) << "no file specified";
++    want_usage = true;
++  }
++  if (want_usage) {
++    Usage();
++    return 2;
++  }
++
++  // Open alternative output file.
++  FILE* out_file = stdout;
++  if (output_file_name) {
++    out_file = fopen(output_file_name, "w");
++    if (!out_file) {
++      PLOG(ERROR) << "Can't open " << output_file_name;
++      return 1;
++    }
++  }
++
++  // Process all files supplied on command line.
++  int result = 0;
++  while (optind < argc) {
++    result |= ProcessFile(out_file, output_dex_directory, verify_output_file, argv[optind++]);
++  }  // while
++
++  if (output_file_name) {
++    CHECK(out_file != nullptr && out_file != stdout);
++    fclose(out_file);
++  }
++
++  return result != 0;
++}
++
++}  // namespace art
++
++int main(int argc, char** argv) {
++  // Output all logging to stderr.
++  android::base::SetLogger(android::base::StderrLogger);
++
++  return art::DexlayoutDriver(argc, argv);
++}
