@@ -3,3 +3,5 @@
 src/vdexExtractor
 obj
 libs
+/tools/deodex/hostTools/Linux/api-API_28/lib
+/tools/deodex/hostTools/Linux/api-API_28/lib64

@@ -107,6 +107,7 @@ deps_prepare_env() {
     echo "First run detected - downloading compact_dex_converter bin & lib dependencies"
     deps_download "$api_level"
   fi
+  return # do not auto update deps
 
   if needs_deps_update "$api_level"; then
     echo "Outdated version detected - downloading compact_dex_converter bin & lib dependencies"
@@ -227,7 +228,7 @@ do
 
     # Then check if the corresponding precompiled hostUtils have been downloaded
     deps_prepare_env "$apiLevel"
-    cdexConvBin="$TOOL_ROOT/hostTools/$HOST_OS/api-$apiLevel/bin/compact_dex_converter"
+    cdexConvBin="$TOOL_ROOT/hostTools/$HOST_OS/api-$apiLevel/bin/compact_dex_converter" # compact_dex_converter needs so files in lib and lib64 under $TOOL_ROOT/hostTools/$HOST_OS/api-$apiLevel/. And lib and lib64 both come from android9/out/host/linux-x86/bin in aosp.
 
     # Then convert each CompactDex file
     cdexFiles=($(find "$outDec" -type f -name "*.cdex"))
