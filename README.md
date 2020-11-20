@@ -1,15 +1,17 @@
 # My use case with vdexExtractor and jadx
-Decompile or convert vdex out from Android Pie to java source files with vdexExtractor and jadx:
-    * (ubuntu16.04) android9.0 $ cd /patch/to/vdexExtractor && ./make.sh && ln -sf $ANDROID_BUILD_TOP/out/host/linux-x86/lib ./tools/deodex/hostTools/Linux/api-API_28/ && ln -sf $ANDROID_BUILD_TOP/out/host/linux-x86/lib64 ./tools/deodex/hostTools/Linux/api-API_28/ && ./tools/deodex/run.sh -i /path/to/boot-framework.vdex -o ./
+Decompile or convert vdex file out from Android Pie to java source code files with vdexExtractor and jadx:
+
+* (ubuntu16.04) android9.0 $ cd /patch/to/vdexExtractor && ./make.sh && ln -sf $ANDROID_BUILD_TOP/out/host/linux-x86/lib ./tools/deodex/hostTools/Linux/api-API_28/ && ln -sf $ANDROID_BUILD_TOP/out/host/linux-x86/lib64 ./tools/deodex/hostTools/Linux/api-API_28/ && ./tools/deodex/run.sh -i /path/to/boot-framework.vdex -o ./
 
 Then I got: boot-framework_classes2.dex, boot-framework_classes3.dex and boot-framework_classes.dex under ./vdexExtractor_deodexed/boot-framework/
 
-Note: tools/deodex/hostTools/Linux/api-API_28/bin/compact_dex_converter was compiled with "mmma art/dexlayout/ -j8" from aosp 9 after applied patch( patch/compact_dex_converter/android9.art.dexlayout.patch ) from gist.github.com/anestisb/30265097ad9a5ea2f0ddf7e36db3f07d to android/art/dexlayout. At last, compact_dex_converter's output path in aosp is: out/host/linux-x86/bin/compact_dex_converter. For compact_dex_converter needs so files in lib and lib64 under android9/out/host/linux-x86/bin in aosp, so there are "ln -sf ..." in above commands.
+NOTE: tools/deodex/hostTools/Linux/api-API_28/bin/compact_dex_converter was compiled with "mmma art/dexlayout/ -j8" from aosp 9 after applied patch( patch/compact_dex_converter/android9.art.dexlayout.patch ) from gist.github.com/anestisb/30265097ad9a5ea2f0ddf7e36db3f07d to android/art/dexlayout. At last, compact_dex_converter's output path in aosp is: out/host/linux-x86/bin/compact_dex_converter. For compact_dex_converter needs so files in lib and lib64 under android9/out/host/linux-x86/bin in aosp, so there are "ln -sf ..." in above commands.
 
 Then, I decompiled or converted these dex files to java source codes with jadx( github.com/skylot/jadx/releases/tag/v1.2.0 ): 
-    * (ubuntu16.04) boot-framework $ patch/to/jadx-v1.2.0/bin/jadx -d ./ boot-framework_classes.dex boot-framework_classes2.dex boot-framework_classes3.dex
 
-As a result, java source codes were in ./sources
+* (ubuntu16.04) boot-framework $ patch/to/jadx-v1.2.0/bin/jadx -d ./ boot-framework_classes.dex boot-framework_classes2.dex boot-framework_classes3.dex
+
+As a result, java source code files were in ./sources
 
 # Original details of Vdex Extractor  
 
