@@ -1,7 +1,7 @@
 # My use case: Decompile or convert vdex out from Android Pie to java source files with vdexExtractor and jadx
 ubuntu16.04-android9.0 $ cd vdexExtractor && ./make.sh && ./tools/deodex/run.sh -i /path/to/boot-framework.vdex -o ./
 Then I got: boot-framework_classes2.dex, boot-framework_classes3.dex and boot-framework_classes.dex under ./vdexExtractor_deodexed/boot-framework/
-Note: tools/deodex/hostTools/Linux/api-API_28/bin/compact_dex_converter was compiled with "mmma art/dexlayout/ -j8" from aosp 9 after applied patch from gist.github.com/anestisb/30265097ad9a5ea2f0ddf7e36db3f07d to android/art/dexlayout. At last, compact_dex_converter's output path: out/host/linux-x86/bin/compact_dex_converter
+Note: tools/deodex/hostTools/Linux/api-API_28/bin/compact_dex_converter was compiled with "mmma art/dexlayout/ -j8" from aosp 9 after applied patch( patch/compact_dex_converter/android9.art.dexlayout.patch ) from gist.github.com/anestisb/30265097ad9a5ea2f0ddf7e36db3f07d to android/art/dexlayout. At last, compact_dex_converter's output path: out/host/linux-x86/bin/compact_dex_converter
 
 Then, I decompiled or converted these dex files to java source codes with jadx( github.com/skylot/jadx/releases/tag/v1.2.0 ): 
 boot-framework $ patch/to/jadx/bin/jadx -d ./ boot-framework_classes.dex boot-framework_classes2.dex boot-framework_classes3.dex
