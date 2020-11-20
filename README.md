@@ -1,4 +1,12 @@
-# Vdex Extractor
+# My use cace: Decompile or convert vdex out from Android Pie to dex files with Vdex Extractor
+ubuntu16.04-android9.0 $ cd vdexExtractor && ./make.sh && ./tools/deodex/run.sh -i /path/to/boot-framework.vdex -o ./
+Then I got: boot-framework_classes2.dex, boot-framework_classes3.dex and boot-framework_classes.dex under ./vdexExtractor_deodexed/boot-framework/
+
+What is more, I decompiled or converted these dex files to java source codes with jadx( github.com/skylot/jadx/releases/tag/v1.2.0 ): 
+ubuntu16.04-android9.0 $ patch/to/jadx/bin/jadx -d ./ boot-framework_classes.dex boot-framework_classes2.dex boot-framework_classes3.dex
+Note: java source codes are in ./sources
+
+# Origin Vdex Extractor in details 
 
 Command line tool to decompile and extract Android Dex bytecode from Vdex files that are generated
 along with Oat files when optimizing bytecode from dex2oat ART runtime compiler. Vdex file format
